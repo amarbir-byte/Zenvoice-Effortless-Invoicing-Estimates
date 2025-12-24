@@ -94,6 +94,20 @@ export CHROME_PATH="/path/to/chrome"  # Only if not auto-detected
 
 ## 📖 Usage
 
+### 🖥️ Visual UI (Recommended)
+
+Launch the Comet-style split interface:
+
+```bash
+python run_ui.py
+```
+
+This opens a web interface at `http://localhost:8000` with:
+- **Left side**: Live browser view
+- **Right side**: Agent reasoning & actions
+
+![UI Screenshot](docs/ui-screenshot.png)
+
 ### Check Prerequisites
 
 ```bash

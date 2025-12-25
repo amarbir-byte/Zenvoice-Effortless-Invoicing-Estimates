@@ -5,6 +5,7 @@ Coordinates between LLM, browser, and input simulation.
 
 import asyncio
 import logging
+import re
 import time
 from typing import Optional, List, Dict, Any, Callable
 from dataclasses import dataclass, field
@@ -364,7 +365,8 @@ class AgentOrchestrator:
                     """)
 
             elif action.action_type == ActionType.NAVIGATE:
-                await self.browser.navigate(action.value)
+                url = self._normalize_url(action.value)
+                await self.browser.navigate(url)
 
             elif action.action_type == ActionType.WAIT:
                 await asyncio.sleep(action.options.get("duration", 1.0))
@@ -394,6 +396,69 @@ class AgentOrchestrator:
                 message=str(e),
                 duration=time.time() - start_time,
             )
+
+    def _normalize_url(self, url: str) -> str:
+        """
+        Normalize URL to fix common LLM truncation issues.
+
+        Args:
+            url: The URL from LLM (may be truncated)
+
+        Returns:
+            Normalized URL with proper protocol and domain
+        """
+        if not url:
+            return url
+
+        url = url.strip()
+
+        # Add https:// if no protocol
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+
+        # Common truncated domain fixes
+        truncated_fixes = {
+            ".c/": ".com/",
+            ".co/": ".com/",
+            ".or/": ".org/",
+            ".ne/": ".net/",
+            ".ed/": ".edu/",
+            ".go/": ".gov/",
+            ".io/": ".io/",  # Already correct
+        }
+
+        for truncated, fixed in truncated_fixes.items():
+            if truncated in url:
+                url = url.replace(truncated, fixed)
+
+        # Fix domain endings at end of URL (no trailing slash)
+        domain_fixes = {
+            ".c": ".com",
+            ".co": ".com",
+            ".or": ".org",
+            ".ne": ".net",
+            ".ed": ".edu",
+            ".go": ".gov",
+        }
+
+        for truncated, fixed in domain_fixes.items():
+            if url.endswith(truncated):
+                url = url[:-len(truncated)] + fixed
+
+        # Also check for truncated TLDs before path/query
+        # Match patterns like google.c/search or facebook.co?q=
+        pattern = r'(\.)(c|co|or|ne|ed|go)([/?#])'
+
+        def replace_tld(match):
+            dot = match.group(1)
+            tld = match.group(2)
+            after = match.group(3)
+            tld_map = {"c": "com", "co": "com", "or": "org", "ne": "net", "ed": "edu", "go": "gov"}
+            return dot + tld_map.get(tld, tld) + after
+
+        url = re.sub(pattern, replace_tld, url)
+
+        return url
 
     def stop(self):
         """Stop the current task."""

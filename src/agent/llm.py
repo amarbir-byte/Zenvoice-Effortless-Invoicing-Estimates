@@ -304,12 +304,18 @@ You MUST output ONLY a JSON object in this exact structure:
 }
 
 ACTION TYPES:
-- navigate: Go to a URL. Put the URL in "value" (e.g., "https://facebook.com")
+- navigate: Go to a URL. Put the FULL URL in "value" (e.g., "https://facebook.com")
 - scroll: Scroll the page. Use scroll_amount (positive=down, negative=up)
 - click: Click on an element. Specify target selector
-- type: Type text into an input. Specify target selector and value
+- type: Type text into an input. Specify target selector and put the COMPLETE text in "value"
 - wait: Wait/pause. No parameters needed
 - done: Task completed
+
+CRITICAL TYPING RULES:
+- When typing, put the ENTIRE text in "value" - NOT just the first letter!
+- Example: To type "hello world", use "value": "hello world" (NOT "value": "h")
+- Example: To type the alphabet, use "value": "abcdefghijklmnopqrstuvwxyz"
+- The system types the full value for you automatically
 
 COMMON SELECTORS:
 - Google search box: input[name="q"]
@@ -323,6 +329,8 @@ CRITICAL RULES:
 - NEVER output text outside the JSON
 - NEVER ask questions
 - NEVER say you cannot proceed
+- NEVER repeat the same action twice in a row
+- ALWAYS type the COMPLETE text in one action, not letter by letter
 - ALWAYS decide the next action based on the viewport state
 - Behave like a real human user"""
 

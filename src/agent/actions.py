@@ -100,12 +100,16 @@ class Action:
             if isinstance(coords, (list, tuple)) and len(coords) >= 2:
                 coordinates = (float(coords[0]), float(coords[1]))
 
+        # Handle scroll_amount safely (might be None or missing)
+        scroll_amount_raw = data.get("scroll_amount")
+        scroll_amount = int(scroll_amount_raw) if scroll_amount_raw is not None else 0
+
         return cls(
             action_type=action_type,
             thought=data.get("thought", ""),
-            target=data.get("target", "") or data.get("selector", ""),
-            value=data.get("value", "") or data.get("text", ""),
-            scroll_amount=int(data.get("scroll_amount", 0)),
+            target=data.get("target", "") or data.get("selector", "") or "",
+            value=data.get("value", "") or data.get("text", "") or "",
+            scroll_amount=scroll_amount,
             mouse_path=mouse_path,
             coordinates=coordinates,
             options=data.get("options", {}),

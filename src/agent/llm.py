@@ -87,8 +87,8 @@ class LMStudioClient:
             "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
         }
 
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
+        # Note: json_mode removed - LM Studio doesn't support response_format
+        # We'll rely on the prompt to get JSON output
 
         try:
             async with session.post(

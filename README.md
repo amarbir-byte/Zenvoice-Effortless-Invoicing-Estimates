@@ -94,9 +94,48 @@ export CHROME_PATH="/path/to/chrome"  # Only if not auto-detected
 
 ## 📖 Usage
 
-### 🖥️ Visual UI (Recommended)
+### 🧠 Desktop Overlay (Recommended - Like Comet!)
 
-Launch the Comet-style split interface:
+The overlay mode gives you a floating agent panel on top of your **real browser**:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  YOUR ACTUAL CHROME BROWSER                                │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                                                      │  │
+│  │              Any website you're browsing             │  │
+│  │                                                      │  │
+│  │                                           ┌────────┐ │  │
+│  │                                           │ 🧠 AI  │ │  │
+│  │                                           │ Agent  │ │  │
+│  │                                           │ Panel  │ │  │
+│  │                                           │        │ │  │
+│  │                                           │ [Run]  │ │  │
+│  └──────────────────────────────────────────┴────────┴─┘  │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Step 1: Start Chrome with debugging**
+```bash
+python start_chrome.py
+# Or manually: chrome --remote-debugging-port=9222
+```
+
+**Step 2: Launch the overlay**
+```bash
+python run_overlay.py
+```
+
+**Step 3: Use it!**
+1. Click "Connect to Chrome" in the floating panel
+2. Type a task: "Search for Python tutorials"
+3. Watch the agent work while you see its reasoning!
+
+---
+
+### 🖥️ Web UI (Alternative)
+
+Launch the split-view interface:
 
 ```bash
 python run_ui.py
@@ -106,7 +145,7 @@ This opens a web interface at `http://localhost:8000` with:
 - **Left side**: Live browser view
 - **Right side**: Agent reasoning & actions
 
-![UI Screenshot](docs/ui-screenshot.png)
+---
 
 ### Check Prerequisites
 

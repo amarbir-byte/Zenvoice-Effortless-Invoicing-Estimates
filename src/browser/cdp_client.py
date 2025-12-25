@@ -234,23 +234,32 @@ class CDPClient:
         finally:
             self.off("Page.loadEventFired", on_load)
 
-    async def evaluate(self, expression: str) -> Any:
+    async def evaluate(self, expression: str, throw_on_error: bool = False) -> Any:
         """Execute JavaScript and return the result."""
-        result = await self.send(
-            "Runtime.evaluate",
-            {
-                "expression": expression,
-                "returnByValue": True,
-                "awaitPromise": True,
-            },
-        )
-
-        if "exceptionDetails" in result:
-            raise RuntimeError(
-                result["exceptionDetails"].get("text", "JavaScript error")
+        try:
+            result = await self.send(
+                "Runtime.evaluate",
+                {
+                    "expression": expression,
+                    "returnByValue": True,
+                    "awaitPromise": True,
+                },
             )
 
-        return result.get("result", {}).get("value")
+            if "exceptionDetails" in result:
+                error_text = result["exceptionDetails"].get("text", "JavaScript error")
+                if throw_on_error:
+                    raise RuntimeError(error_text)
+                else:
+                    logger.debug(f"JavaScript error (ignored): {error_text}")
+                    return None
+
+            return result.get("result", {}).get("value")
+        except Exception as e:
+            if throw_on_error:
+                raise
+            logger.debug(f"Evaluate failed (ignored): {e}")
+            return None
 
     async def screenshot(self, format: str = "png", quality: int = 90) -> bytes:
         """Capture a screenshot."""

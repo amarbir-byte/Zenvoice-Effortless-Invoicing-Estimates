@@ -260,7 +260,7 @@ class AgentOrchestrator:
         if len(last_actions) >= 3:
             recent_types = [r.action.action_type for r in last_actions[-3:]]
             if len(set(recent_types)) == 1:  # All same action type
-                logger.warning(f"Loop detected: {recent_types[0].value} repeated 3 times")
+                logger.warning(f"Loop detected: {recent_types[0].name} repeated 3 times")
                 # Add a hint to break out
                 history.append({
                     "role": "user",

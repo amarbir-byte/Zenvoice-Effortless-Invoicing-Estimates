@@ -362,11 +362,20 @@ class KeyboardSimulator:
         Returns:
             True if successful
         """
+        # Wait for element to be available (with retry)
+        element_ready = await self._wait_for_element(selector, timeout=5.0)
+        if not element_ready:
+            logger.warning(f"Element not found after waiting: {selector}")
+            # Try JavaScript fallback
+            return await self._type_via_javascript(selector, text)
+
         # Click on the element if mouse simulator provided
         if mouse_simulator:
             success = await mouse_simulator.click_element(selector)
             if not success:
-                return False
+                # Try JavaScript fallback
+                logger.warning(f"Click failed, trying JavaScript fallback")
+                return await self._type_via_javascript(selector, text)
             await asyncio.sleep(self.timing.hover_delay())
         else:
             # Focus via JavaScript
@@ -374,7 +383,7 @@ class KeyboardSimulator:
                 await self.cdp.evaluate(f"document.querySelector('{selector}').focus()")
             except Exception as e:
                 logger.warning(f"Could not focus element: {e}")
-                return False
+                return await self._type_via_javascript(selector, text)
 
         if clear_first:
             await self.clear_field()
@@ -382,3 +391,65 @@ class KeyboardSimulator:
 
         await self.type_text(text)
         return True
+
+    async def _wait_for_element(self, selector: str, timeout: float = 5.0) -> bool:
+        """Wait for an element to be available in the DOM."""
+        import time
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                result = await self.cdp.evaluate(
+                    f"document.querySelector('{selector}') !== null"
+                )
+                if result:
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+        return False
+
+    async def _type_via_javascript(self, selector: str, text: str) -> bool:
+        """Fallback: Type text using JavaScript (for when CDP input fails)."""
+        try:
+            # Escape text for JavaScript
+            escaped_text = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+
+            js_code = f"""
+            (function() {{
+                var el = document.querySelector('{selector}');
+                if (!el) {{
+                    // Try alternative selectors for common search boxes
+                    var alternatives = [
+                        'input[type="text"]',
+                        'input[type="search"]',
+                        'textarea[name="q"]',
+                        '[role="combobox"]',
+                        'input.gLFyf',
+                        '#search-input',
+                        '.search-input',
+                        'textarea'
+                    ];
+                    for (var i = 0; i < alternatives.length; i++) {{
+                        var altEl = document.querySelector(alternatives[i]);
+                        if (altEl) {{
+                            el = altEl;
+                            break;
+                        }}
+                    }}
+                }}
+                if (!el) return false;
+                el.focus();
+                el.value = '{escaped_text}';
+                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                return true;
+            }})()
+            """
+            result = await self.cdp.evaluate(js_code)
+            if result:
+                logger.info(f"Successfully typed via JavaScript fallback")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"JavaScript typing fallback failed: {e}")
+            return False

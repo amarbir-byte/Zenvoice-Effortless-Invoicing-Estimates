@@ -524,7 +524,7 @@ class MouseSimulator:
             return await self._js_click(selector)
 
     async def _js_click(self, selector: str) -> bool:
-        """Fallback: Click element using JavaScript."""
+        """Fallback: Click element using JavaScript with full event simulation."""
         try:
             js_code = f"""
             (function() {{
@@ -536,7 +536,8 @@ class MouseSimulator:
                         'button',
                         '[role="button"]',
                         '[onclick]',
-                        'input[type="submit"]'
+                        'input[type="submit"]',
+                        '[type="button"]'
                     ];
                     for (var i = 0; i < alternatives.length; i++) {{
                         var altEl = document.querySelector(alternatives[i]);
@@ -551,9 +552,49 @@ class MouseSimulator:
                 // Scroll into view
                 el.scrollIntoView({{behavior: 'instant', block: 'center'}});
 
-                // Focus and click
+                // Get element center
+                var rect = el.getBoundingClientRect();
+                var x = rect.left + rect.width / 2;
+                var y = rect.top + rect.height / 2;
+
+                // Create and dispatch full mouse event sequence
+                var eventOptions = {{
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: x,
+                    clientY: y,
+                    screenX: x,
+                    screenY: y,
+                    button: 0,
+                    buttons: 1
+                }};
+
+                // Dispatch mousedown
+                el.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+
+                // Focus the element
                 el.focus();
+
+                // Dispatch mouseup
+                el.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+
+                // Dispatch click
+                el.dispatchEvent(new MouseEvent('click', eventOptions));
+
+                // Also try native click as backup
                 el.click();
+
+                // For links, try navigation
+                if (el.tagName === 'A' && el.href) {{
+                    window.location.href = el.href;
+                }}
+
+                // For buttons in forms, try submit
+                if (el.type === 'submit' && el.form) {{
+                    el.form.submit();
+                }}
+
                 return true;
             }})()
             """

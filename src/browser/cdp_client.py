@@ -85,7 +85,7 @@ class CDPClient:
             await self.send("DOM.enable")
             await self.send("Runtime.enable")
             await self.send("Network.enable")
-            await self.send("Input.enable")
+            # Note: Input domain doesn't need enabling
 
             logger.info(f"Connected to Chrome target: {self.target_id}")
 

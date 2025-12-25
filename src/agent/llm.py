@@ -184,20 +184,26 @@ class LMStudioClient:
             system_prompt: System prompt defining agent behavior
             viewport_state: Current viewport state as text
             task: User's task description
-            history: Optional conversation history (not used to avoid alternation issues)
+            history: Optional action history for context
 
         Returns:
             Parsed action dict
         """
-        # Simple two-message format that works with all models
-        # Note: History removed to avoid role alternation issues with some models
+        # Build history context if available
+        history_text = ""
+        if history and len(history) > 0:
+            history_text = "\n\nPREVIOUS ACTIONS (do NOT repeat these):\n"
+            for i, h in enumerate(history[-5:], 1):  # Last 5 actions
+                action_info = h.get("content", "")
+                history_text += f"{i}. {action_info}\n"
+            history_text += "\nYou MUST try a DIFFERENT action now!\n"
 
         # Build user message with current state
         user_message = f"""TASK: {task}
 
 CURRENT VIEWPORT STATE:
 {viewport_state}
-
+{history_text}
 Based on the current state, determine the next action to take.
 Output ONLY a valid JSON object in this exact format:
 {{
@@ -211,7 +217,8 @@ Output ONLY a valid JSON object in this exact format:
 IMPORTANT:
 - For Google search, the search box selector is: input[name="q"]
 - Output raw JSON only, no markdown code blocks
-- Only use real CSS selectors from the visible elements list"""
+- Only use real CSS selectors from the visible elements list
+- If you've scrolled multiple times without finding what you need, try a DIFFERENT approach (click, search, etc.)"""
 
         messages = [
             {"role": "system", "content": system_prompt},

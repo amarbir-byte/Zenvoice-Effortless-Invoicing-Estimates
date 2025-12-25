@@ -239,19 +239,33 @@ class AgentOrchestrator:
         task: str,
     ) -> Action:
         """Get the next action from the LLM."""
-        # Build conversation history for context
+        # Build simple history for context
         history = []
 
-        # Add last few actions for context
-        for result in self.history.get_last(5):
-            history.append({
-                "role": "assistant",
-                "content": result.action.to_json(),
-            })
+        # Add last few actions as simple strings
+        last_actions = self.history.get_last(5)
+        for result in last_actions:
+            action_str = f"{result.action.action_type.value}"
+            if result.action.target:
+                action_str += f" on {result.action.target}"
+            if result.action.value:
+                action_str += f" = {result.action.value[:30]}"
+            status = "✓" if result.success else "✗"
             history.append({
                 "role": "user",
-                "content": f"Action result: {'success' if result.success else 'failed - ' + result.message}",
+                "content": f"{status} {action_str}",
             })
+
+        # Detect if stuck in a loop (same action 3+ times)
+        if len(last_actions) >= 3:
+            recent_types = [r.action.action_type for r in last_actions[-3:]]
+            if len(set(recent_types)) == 1:  # All same action type
+                logger.warning(f"Loop detected: {recent_types[0].value} repeated 3 times")
+                # Add a hint to break out
+                history.append({
+                    "role": "user",
+                    "content": "⚠️ LOOP DETECTED! You've done the same action 3 times. TRY SOMETHING COMPLETELY DIFFERENT like clicking a link or using search!",
+                })
 
         # Get action from LLM
         action_dict = await self.llm.get_action(

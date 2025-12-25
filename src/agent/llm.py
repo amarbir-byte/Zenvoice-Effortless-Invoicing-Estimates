@@ -184,16 +184,13 @@ class LMStudioClient:
             system_prompt: System prompt defining agent behavior
             viewport_state: Current viewport state as text
             task: User's task description
-            history: Optional conversation history
+            history: Optional conversation history (not used to avoid alternation issues)
 
         Returns:
             Parsed action dict
         """
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Add history if provided
-        if history:
-            messages.extend(history)
+        # Simple two-message format that works with all models
+        # Note: History removed to avoid role alternation issues with some models
 
         # Build user message with current state
         user_message = f"""TASK: {task}
@@ -202,9 +199,24 @@ CURRENT VIEWPORT STATE:
 {viewport_state}
 
 Based on the current state, determine the next action to take.
-Output ONLY a JSON object with your reasoning and action."""
+Output ONLY a valid JSON object in this exact format:
+{{
+  "thought": "your reasoning here",
+  "action": "scroll | click | type | wait | done",
+  "target": "CSS selector if clicking or typing",
+  "value": "text to type if typing",
+  "scroll_amount": 300
+}}
 
-        messages.append({"role": "user", "content": user_message})
+IMPORTANT:
+- For Google search, the search box selector is: input[name="q"]
+- Output raw JSON only, no markdown code blocks
+- Only use real CSS selectors from the visible elements list"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
 
         # Get response
         response = await self.chat(messages, json_mode=True)

@@ -477,18 +477,91 @@ class MouseSimulator:
         Returns:
             True if element was found and clicked
         """
-        bounds = await self.cdp.get_element_bounds(selector)
-        if not bounds:
-            logger.warning(f"Element not found: {selector}")
+        # First, scroll element into view and get viewport-relative coordinates
+        try:
+            js_code = f"""
+            (function() {{
+                var el = document.querySelector('{selector}');
+                if (!el) return null;
+
+                // Scroll into view
+                el.scrollIntoView({{behavior: 'instant', block: 'center'}});
+
+                // Get bounding rect (viewport-relative)
+                var rect = el.getBoundingClientRect();
+                return {{
+                    x: rect.left,
+                    y: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                    visible: rect.top >= 0 && rect.bottom <= window.innerHeight
+                }};
+            }})()
+            """
+            bounds = await self.cdp.evaluate(js_code)
+
+            if not bounds:
+                logger.warning(f"Element not found: {selector}")
+                # Try JavaScript click as fallback
+                return await self._js_click(selector)
+
+            # Small delay after scroll
+            await asyncio.sleep(0.1)
+
+            # Click in center with slight random offset
+            center_x = bounds["x"] + bounds["width"] / 2
+            center_y = bounds["y"] + bounds["height"] / 2
+
+            # Add small random offset (up to 25% of element size)
+            offset_x = self._rng.uniform(-0.25, 0.25) * bounds["width"]
+            offset_y = self._rng.uniform(-0.25, 0.25) * bounds["height"]
+
+            await self.click(center_x + offset_x, center_y + offset_y)
+            return True
+
+        except Exception as e:
+            logger.warning(f"CDP click failed: {e}, trying JS fallback")
+            return await self._js_click(selector)
+
+    async def _js_click(self, selector: str) -> bool:
+        """Fallback: Click element using JavaScript."""
+        try:
+            js_code = f"""
+            (function() {{
+                var el = document.querySelector('{selector}');
+                if (!el) {{
+                    // Try common alternative selectors
+                    var alternatives = [
+                        'a[href]',
+                        'button',
+                        '[role="button"]',
+                        '[onclick]',
+                        'input[type="submit"]'
+                    ];
+                    for (var i = 0; i < alternatives.length; i++) {{
+                        var altEl = document.querySelector(alternatives[i]);
+                        if (altEl) {{
+                            el = altEl;
+                            break;
+                        }}
+                    }}
+                }}
+                if (!el) return false;
+
+                // Scroll into view
+                el.scrollIntoView({{behavior: 'instant', block: 'center'}});
+
+                // Focus and click
+                el.focus();
+                el.click();
+                return true;
+            }})()
+            """
+            result = await self.cdp.evaluate(js_code)
+            if result:
+                logger.info(f"Successfully clicked via JavaScript fallback")
+                return True
             return False
-
-        # Click in center with slight random offset
-        center_x = bounds["x"] + bounds["width"] / 2
-        center_y = bounds["y"] + bounds["height"] / 2
-
-        # Add small random offset (up to 25% of element size)
-        offset_x = self._rng.uniform(-0.25, 0.25) * bounds["width"]
-        offset_y = self._rng.uniform(-0.25, 0.25) * bounds["height"]
-
-        await self.click(center_x + offset_x, center_y + offset_y)
-        return True
+        except Exception as e:
+            logger.error(f"JavaScript click fallback failed: {e}")
+            return False

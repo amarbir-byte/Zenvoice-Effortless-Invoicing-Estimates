@@ -477,25 +477,32 @@ class MouseSimulator:
         Returns:
             True if element was found and clicked
         """
+        # Escape selector for JavaScript
+        safe_selector = selector.replace("'", "\\'").replace("\\", "\\\\")
+
         # First, scroll element into view and get viewport-relative coordinates
         try:
             js_code = f"""
             (function() {{
-                var el = document.querySelector('{selector}');
-                if (!el) return null;
+                try {{
+                    var el = document.querySelector('{safe_selector}');
+                    if (!el) return null;
 
-                // Scroll into view
-                el.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                    // Scroll into view
+                    el.scrollIntoView({{behavior: 'instant', block: 'center'}});
 
-                // Get bounding rect (viewport-relative)
-                var rect = el.getBoundingClientRect();
-                return {{
-                    x: rect.left,
-                    y: rect.top,
-                    width: rect.width,
-                    height: rect.height,
-                    visible: rect.top >= 0 && rect.bottom <= window.innerHeight
-                }};
+                    // Get bounding rect (viewport-relative)
+                    var rect = el.getBoundingClientRect();
+                    return {{
+                        x: rect.left,
+                        y: rect.top,
+                        width: rect.width,
+                        height: rect.height,
+                        visible: rect.top >= 0 && rect.bottom <= window.innerHeight
+                    }};
+                }} catch(e) {{
+                    return null;
+                }}
             }})()
             """
             bounds = await self.cdp.evaluate(js_code)
@@ -525,77 +532,52 @@ class MouseSimulator:
 
     async def _js_click(self, selector: str) -> bool:
         """Fallback: Click element using JavaScript with full event simulation."""
+        # Escape selector for JavaScript
+        safe_selector = selector.replace("'", "\\'").replace("\\", "\\\\")
+
         try:
             js_code = f"""
             (function() {{
-                var el = document.querySelector('{selector}');
-                if (!el) {{
-                    // Try common alternative selectors
-                    var alternatives = [
-                        'a[href]',
-                        'button',
-                        '[role="button"]',
-                        '[onclick]',
-                        'input[type="submit"]',
-                        '[type="button"]'
-                    ];
-                    for (var i = 0; i < alternatives.length; i++) {{
-                        var altEl = document.querySelector(alternatives[i]);
-                        if (altEl) {{
-                            el = altEl;
-                            break;
+                try {{
+                    var el = document.querySelector('{safe_selector}');
+                    if (!el) {{
+                        // Try common alternative selectors
+                        var alternatives = [
+                            'a[href]',
+                            'button',
+                            '[role="button"]',
+                            '[onclick]',
+                            'input[type="submit"]',
+                            '[type="button"]'
+                        ];
+                        for (var i = 0; i < alternatives.length; i++) {{
+                            try {{
+                                var altEl = document.querySelector(alternatives[i]);
+                                if (altEl) {{
+                                    el = altEl;
+                                    break;
+                                }}
+                            }} catch(e2) {{}}
                         }}
                     }}
+                    if (!el) return false;
+
+                    // Scroll into view
+                    el.scrollIntoView({{behavior: 'instant', block: 'center'}});
+
+                    // Simple click approach
+                    el.focus();
+                    el.click();
+
+                    // For links, try navigation
+                    if (el.tagName === 'A' && el.href) {{
+                        window.location.href = el.href;
+                    }}
+
+                    return true;
+                }} catch(e) {{
+                    return false;
                 }}
-                if (!el) return false;
-
-                // Scroll into view
-                el.scrollIntoView({{behavior: 'instant', block: 'center'}});
-
-                // Get element center
-                var rect = el.getBoundingClientRect();
-                var x = rect.left + rect.width / 2;
-                var y = rect.top + rect.height / 2;
-
-                // Create and dispatch full mouse event sequence
-                var eventOptions = {{
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    clientX: x,
-                    clientY: y,
-                    screenX: x,
-                    screenY: y,
-                    button: 0,
-                    buttons: 1
-                }};
-
-                // Dispatch mousedown
-                el.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-
-                // Focus the element
-                el.focus();
-
-                // Dispatch mouseup
-                el.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-
-                // Dispatch click
-                el.dispatchEvent(new MouseEvent('click', eventOptions));
-
-                // Also try native click as backup
-                el.click();
-
-                // For links, try navigation
-                if (el.tagName === 'A' && el.href) {{
-                    window.location.href = el.href;
-                }}
-
-                // For buttons in forms, try submit
-                if (el.type === 'submit' && el.form) {{
-                    el.form.submit();
-                }}
-
-                return true;
             }})()
             """
             result = await self.cdp.evaluate(js_code)

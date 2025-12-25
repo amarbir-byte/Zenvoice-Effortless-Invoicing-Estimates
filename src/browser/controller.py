@@ -185,80 +185,25 @@ class BrowserController:
         return False
 
     async def _apply_stealth(self):
-        """Apply anti-detection JavaScript patches."""
+        """Apply anti-detection JavaScript patches (simplified version)."""
+        # Simplified stealth - just remove webdriver flag
         stealth_js = """
-        // Remove webdriver flag
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
-
-        // Fix plugins
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [
-                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                { name: 'Native Client', filename: 'internal-nacl-plugin' }
-            ]
-        });
-
-        // Fix languages
-        Object.defineProperty(navigator, 'languages', {
-            get: () => ['en-US', 'en']
-        });
-
-        // Fix permissions
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-            parameters.name === 'notifications' ?
-                Promise.resolve({ state: Notification.permission }) :
-                originalQuery(parameters)
-        );
-
-        // Fix chrome runtime
-        window.chrome = {
-            runtime: {},
-            loadTimes: function() {},
-            csi: function() {},
-            app: {}
-        };
-
-        // Fix iframe contentWindow
-        const originalContentWindow = Object.getOwnPropertyDescriptor(
-            HTMLIFrameElement.prototype, 'contentWindow'
-        );
-        Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
-            get: function() {
-                const window = originalContentWindow.get.call(this);
-                if (window) {
-                    Object.defineProperty(window.navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                }
-                return window;
-            }
-        });
-
-        // Patch toString to hide modifications
-        const originalFunction = Function.prototype.toString;
-        Function.prototype.toString = function() {
-            if (this === window.navigator.permissions.query) {
-                return 'function query() { [native code] }';
-            }
-            return originalFunction.call(this);
-        };
+        try {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        } catch(e) {}
         """
 
         try:
-            # Add script to run on new document
             await self.cdp.send(
                 "Page.addScriptToEvaluateOnNewDocument",
                 {"source": stealth_js},
             )
-            # Also run on current page
-            await self.cdp.evaluate(stealth_js)
-            logger.debug("Applied stealth patches")
+            logger.debug("Applied basic stealth patch")
         except Exception as e:
-            logger.warning(f"Failed to apply some stealth patches: {e}")
+            # Stealth is optional - don't fail if it doesn't work
+            logger.debug(f"Stealth patch skipped: {e}")
 
     async def stop(self):
         """Stop the browser."""

@@ -395,11 +395,12 @@ class KeyboardSimulator:
     async def _wait_for_element(self, selector: str, timeout: float = 5.0) -> bool:
         """Wait for an element to be available in the DOM."""
         import time
+        safe_selector = selector.replace("'", "\\'").replace("\\", "\\\\")
         start = time.time()
         while time.time() - start < timeout:
             try:
                 result = await self.cdp.evaluate(
-                    f"document.querySelector('{selector}') !== null"
+                    f"(function() {{ try {{ return document.querySelector('{safe_selector}') !== null; }} catch(e) {{ return false; }} }})()"
                 )
                 if result:
                     return True
@@ -411,38 +412,48 @@ class KeyboardSimulator:
     async def _type_via_javascript(self, selector: str, text: str) -> bool:
         """Fallback: Type text using JavaScript (for when CDP input fails)."""
         try:
-            # Escape text for JavaScript
-            escaped_text = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+            # Escape text and selector for JavaScript
+            escaped_text = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+            safe_selector = selector.replace("'", "\\'").replace("\\", "\\\\")
 
             js_code = f"""
             (function() {{
-                var el = document.querySelector('{selector}');
-                if (!el) {{
-                    // Try alternative selectors for common search boxes
-                    var alternatives = [
-                        'input[type="text"]',
-                        'input[type="search"]',
-                        'textarea[name="q"]',
-                        '[role="combobox"]',
-                        'input.gLFyf',
-                        '#search-input',
-                        '.search-input',
-                        'textarea'
-                    ];
-                    for (var i = 0; i < alternatives.length; i++) {{
-                        var altEl = document.querySelector(alternatives[i]);
-                        if (altEl) {{
-                            el = altEl;
-                            break;
+                try {{
+                    var el = document.querySelector('{safe_selector}');
+                    if (!el) {{
+                        // Try alternative selectors for common search boxes
+                        var alternatives = [
+                            'input[type="text"]',
+                            'input[type="search"]',
+                            'textarea[name="q"]',
+                            '[role="combobox"]',
+                            'input.gLFyf',
+                            '#search-input',
+                            '.search-input',
+                            'textarea',
+                            'input'
+                        ];
+                        for (var i = 0; i < alternatives.length; i++) {{
+                            try {{
+                                var altEl = document.querySelector(alternatives[i]);
+                                if (altEl) {{
+                                    el = altEl;
+                                    break;
+                                }}
+                            }} catch(e2) {{}}
                         }}
                     }}
+                    if (!el) return false;
+                    el.focus();
+                    el.value = '{escaped_text}';
+                    try {{
+                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }} catch(e3) {{}}
+                    return true;
+                }} catch(e) {{
+                    return false;
                 }}
-                if (!el) return false;
-                el.focus();
-                el.value = '{escaped_text}';
-                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                return true;
             }})()
             """
             result = await self.cdp.evaluate(js_code)

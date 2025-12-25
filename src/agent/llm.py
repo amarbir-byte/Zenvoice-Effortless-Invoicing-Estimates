@@ -208,11 +208,13 @@ Based on the current state, determine the next action to take.
 Output ONLY a valid JSON object in this exact format:
 {{
   "thought": "your reasoning here",
-  "action": "scroll | click | type | wait | done",
+  "action": "navigate | scroll | click | type | press_key | wait | done",
   "target": "CSS selector if clicking or typing",
-  "value": "text to type if typing",
+  "value": "URL, text to type, or key name (Enter/Tab/Escape)",
   "scroll_amount": 300
 }}
+
+TIP: After typing in a search box, use press_key with value "Enter" to submit!
 
 IMPORTANT:
 - For Google search, the search box selector is: input[name="q"]
@@ -304,9 +306,9 @@ You MUST output ONLY a JSON object in this exact structure:
 
 {
   "thought": "Explain your reasoning and what you intend to do next.",
-  "action": "navigate | scroll | click | type | wait | done",
+  "action": "navigate | scroll | click | type | press_key | wait | done",
   "target": "CSS selector if clicking/typing",
-  "value": "URL if navigating, or text if typing",
+  "value": "URL if navigating, text if typing, or key name if press_key",
   "scroll_amount": 300
 }
 
@@ -315,6 +317,7 @@ ACTION TYPES:
 - scroll: Scroll the page. Use scroll_amount (positive=down, negative=up)
 - click: Click on an element. Specify target selector
 - type: Type text into an input. Specify target selector and put the COMPLETE text in "value"
+- press_key: Press a key. Put key name in "value" (e.g., "Enter", "Tab", "Escape")
 - wait: Wait/pause. No parameters needed
 - done: Task completed
 
@@ -323,9 +326,10 @@ CRITICAL TYPING RULES:
 - Example: To type "hello world", use "value": "hello world" (NOT "value": "h")
 - Example: To type the alphabet, use "value": "abcdefghijklmnopqrstuvwxyz"
 - The system types the full value for you automatically
+- After typing in a SEARCH BOX, just use action "press_key" with value "Enter" to submit - NO need to find a search button!
 
 COMMON SELECTORS:
-- Google search box: input[name="q"]
+- Google search box: input[name="q"] or textarea[name="q"]
 - Generic search: input[type="search"]
 - Links: a[href*="keyword"]
 - Buttons: button, input[type="submit"]
@@ -339,6 +343,7 @@ CRITICAL RULES:
 - NEVER repeat the same action twice in a row
 - ALWAYS type the COMPLETE text in one action, not letter by letter
 - ALWAYS decide the next action based on the viewport state
+- After typing in a search box, use press_key with "Enter" to submit (DON'T look for a button!)
 - Behave like a real human user"""
 
 

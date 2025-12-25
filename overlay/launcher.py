@@ -1,11 +1,13 @@
 """
 Overlay Launcher - Connects the floating panel to the browser agent.
+Uses a persistent event loop for async operations.
 """
 
 import asyncio
 import threading
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -16,6 +18,36 @@ from src.agent.llm import LMStudioClient
 from src.agent.orchestrator import AgentOrchestrator, TaskConfig
 from src.agent.actions import Action, ActionResult
 from config import config, load_config_from_env
+
+
+class AsyncLoopThread:
+    """Manages a persistent event loop in a background thread."""
+
+    def __init__(self):
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.thread: Optional[threading.Thread] = None
+
+    def start(self):
+        """Start the event loop thread."""
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+
+    def _run_loop(self):
+        """Run the event loop forever."""
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
+
+    def run_coroutine(self, coro):
+        """Run a coroutine in the event loop."""
+        if self.loop is None:
+            raise RuntimeError("Event loop not started")
+        return asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+    def stop(self):
+        """Stop the event loop."""
+        if self.loop:
+            self.loop.call_soon_threadsafe(self.loop.stop)
 
 
 class OverlayAgent:
@@ -30,27 +62,32 @@ class OverlayAgent:
             on_connect=self._on_connect,
         )
 
-        self.browser: BrowserController = None
-        self.llm: LMStudioClient = None
-        self.agent: AgentOrchestrator = None
+        self.browser: Optional[BrowserController] = None
+        self.llm: Optional[LMStudioClient] = None
+        self.agent: Optional[AgentOrchestrator] = None
 
-        self.loop: asyncio.AbstractEventLoop = None
-        self._task_future = None
+        # Persistent event loop for async operations
+        self.async_loop = AsyncLoopThread()
 
     def _on_connect(self):
         """Handle connect button - connect to existing Chrome."""
-        def do_connect():
-            asyncio.run(self._connect_to_chrome())
+        future = self.async_loop.run_coroutine(self._connect_to_chrome())
 
-        thread = threading.Thread(target=do_connect, daemon=True)
-        thread.start()
+        # Handle result in background
+        def on_done(f):
+            try:
+                f.result()
+            except Exception as e:
+                self.panel.add_log('error', f'Connection error: {str(e)}')
+
+        future.add_done_callback(on_done)
 
     async def _connect_to_chrome(self):
         """Connect to Chrome with remote debugging enabled."""
         try:
             self.panel.add_log('status', 'Connecting to Chrome...')
 
-            # Check if Chrome is running with remote debugging
+            # Create CDP client
             cdp = CDPClient(port=config.browser.remote_debugging_port)
 
             try:
@@ -60,22 +97,17 @@ class OverlayAgent:
             except Exception as e:
                 self.panel.add_log('error', 'Chrome not found with remote debugging')
                 self.panel.add_log('status', 'Start Chrome with:')
-                self.panel.add_log('details', 'chrome --remote-debugging-port=9222')
+                self.panel.add_log('status', 'chrome --remote-debugging-port=9222')
                 self.panel.set_connected(False)
                 return
 
-            await cdp.disconnect()
+            self.panel.add_log('status', 'Connected to Chrome')
 
-            # Create browser controller (connect mode, don't launch)
+            # Create browser controller and use the connected CDP
             self.browser = BrowserController(
                 port=config.browser.remote_debugging_port,
             )
-
-            # Connect to existing Chrome
-            self.browser.cdp = CDPClient(port=config.browser.remote_debugging_port)
-            await self.browser.cdp.connect()
-
-            self.panel.add_log('status', 'Connected to Chrome')
+            self.browser.cdp = cdp
 
             # Apply stealth patches
             await self.browser._apply_stealth()
@@ -92,6 +124,7 @@ class OverlayAgent:
             if not await self.llm.check_health():
                 self.panel.add_log('error', 'LM Studio not available')
                 self.panel.add_log('status', 'Start LM Studio and load a model')
+                self.panel.set_connected(True)  # Still connected to Chrome
                 return
 
             models = await self.llm.list_models()
@@ -107,14 +140,21 @@ class OverlayAgent:
         except Exception as e:
             self.panel.add_log('error', f'Connection failed: {str(e)}')
             self.panel.set_connected(False)
+            raise
 
     def _on_task(self, task: str):
         """Handle task submission."""
-        def do_task():
-            asyncio.run(self._run_task(task))
+        future = self.async_loop.run_coroutine(self._run_task(task))
 
-        thread = threading.Thread(target=do_task, daemon=True)
-        thread.start()
+        def on_done(f):
+            try:
+                f.result()
+            except Exception as e:
+                self.panel.add_log('error', f'Task error: {str(e)}')
+            finally:
+                self.panel.set_task_running(False)
+
+        future.add_done_callback(on_done)
 
     async def _run_task(self, task: str):
         """Run a task with the agent."""
@@ -144,7 +184,7 @@ class OverlayAgent:
                 max_actions=50,
                 verbose=True,
                 screenshot_on_action=False,
-                use_vision=True,
+                use_vision=False,  # Disable for now to avoid OCR issues
                 use_dom=True,
                 on_action=on_action,
             )
@@ -158,9 +198,7 @@ class OverlayAgent:
 
         except Exception as e:
             self.panel.add_log('error', f'Error: {str(e)}')
-
-        finally:
-            self.panel.set_task_running(False)
+            raise
 
     def _on_stop(self):
         """Handle stop button."""
@@ -170,7 +208,14 @@ class OverlayAgent:
 
     def run(self):
         """Run the overlay agent."""
+        # Start the async event loop thread
+        self.async_loop.start()
+
+        # Run the UI (blocks until closed)
         self.panel.run()
+
+        # Cleanup
+        self.async_loop.stop()
 
     async def cleanup(self):
         """Clean up resources."""
